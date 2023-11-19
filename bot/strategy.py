@@ -17,6 +17,7 @@ class EMACrossWithKD(Strategy):
 
         self._stop_loss = stop_loss
         self._stop_loss_order = None
+        self._should_adjust_sl, self._adjusted_price = False, 0
 
         self._fast_ema = ExponentialMovingAverage(self.datas[0], period=fast_period)
         self._slow_ema = ExponentialMovingAverage(self.datas[0], period=slow_period)
@@ -89,7 +90,7 @@ class EMACrossWithKD(Strategy):
 
         return min_hold_elapsed and fast_over_slow_minus1 and not fast_over_slow_minus0
 
-    def _adjust_stop_loss(self):
+    def _stop_loss_change(self):
         if self._stop_loss_order is None:
             return False
 
@@ -112,12 +113,13 @@ class EMACrossWithKD(Strategy):
 
             # If we wait for the sell to be accepted for cancelling the SL, we
             # run into problems if both orders are executed the same day.
-            info(self, "Stop lost cancelled")
+            info(self, "Stop loss cancelled")
             self.cancel(self._stop_loss_order)
-        if self._adjust_stop_loss():
-            price = self.close_price - self.close_price*self._stop_loss
+            self._should_adjust_sl = False
+        if self._stop_loss_change():
             self.cancel(self._stop_loss_order)
-            info(self, f"Stop lost adjusted, from={self._stop_loss_order.price:.2f}, to={price:.2f}")
+            self._adjusted_price = self.close_price - self.close_price*self._stop_loss
+            self._should_adjust_sl = True
 
     def notify_order(self, order):
         action = "BUY" if order.isbuy() else "SELL"
@@ -125,19 +127,16 @@ class EMACrossWithKD(Strategy):
         if order.status == order.Submitted:
             debug(self, f"Submitted {action} - {order.getordername()}")
             return None
-
-        if order.status == order.Accepted:
-            debug(self, f"Accepted {action} - {order.getordername()}")
+        elif order.status == order.Accepted:
+            info(self, f"Accepted {action} - {order.getordername()}")
             if order.issell():
                 if order.exectype == Order.StopLimit:
                     self._stop_loss_order = order
             return None
-
-        if order.status == order.Partial:
+        elif order.status == order.Partial:
             debug(self, f"Partial {action} - {order.getordername()}")
             return None
-
-        if order.status == order.Completed:
+        elif order.status == order.Completed:
             msg = "Executed {} - {}, size={}, price={:.2f}, amount={:.2f}, comm={:.2f}, cash={:.2f}".format(
                 action, order.getordername(), order.executed.size, order.executed.price,
                 order.executed.value, order.executed.comm, self.cash
@@ -152,16 +151,21 @@ class EMACrossWithKD(Strategy):
                 price = order.executed.price - order.executed.price*self._stop_loss
                 info(self, f"Stop loss active, {price=:.2f}")
                 self.submit_sell(price, order.executed.size, Order.StopLimit)
-            else:  # Other sell
+            else:
                 self._qty += order.executed.size  # Size of SELL is negative.
-        if order.status == order.Margin:
+        elif order.status == order.Margin:
             # The price went up, and we don't have enough money to make the planned buy.
             warning(self, f"Margin {action}: {self.close_price[0]=}")
             if self._buy_signal():
                 size = order_size(self.close_price, self.cash, 100)
                 self.submit_buy(self.close_price, size, Order.Limit)
-        elif order.status == order.Rejected:
-            warning(self, f"{order.getstatusname()} {action} - {order.getordername()}")
         elif order.status == Order.Canceled and order.exectype == Order.StopLimit:  # Stop loss
-            info(self, f"Cancelled {action} - {order.getordername()}")
-            self._stop_loss_order = None
+            if self._should_adjust_sl:
+                info(self, f"Stop loss adjusted, from={self._stop_loss_order.price:.2f}, to={self._adjusted_price:.2f}")
+                self.submit_sell(self._adjusted_price, self._stop_loss_order.size, Order.StopLimit)
+                self._should_adjust_sl = False
+            else:
+                info(self, f"Stop loss cancelled")
+                self._stop_loss_order = None
+        else:
+            warning(self, f"{order.getstatusname()} {action} - {order.getordername()}")
