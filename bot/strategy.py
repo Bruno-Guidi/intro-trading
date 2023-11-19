@@ -114,9 +114,10 @@ class EMACrossWithKD(Strategy):
             # run into problems if both orders are executed the same day.
             info(self, "Stop lost cancelled")
             self.cancel(self._stop_loss_order)
-            self._stop_loss_order = None
         if self._adjust_stop_loss():
-            pass
+            price = self.close_price - self.close_price*self._stop_loss
+            self.cancel(self._stop_loss_order)
+            info(self, f"Stop lost adjusted, from={self._stop_loss_order.price:.2f}, to={price:.2f}")
 
     def notify_order(self, order):
         action = "BUY" if order.isbuy() else "SELL"
@@ -159,5 +160,8 @@ class EMACrossWithKD(Strategy):
             if self._buy_signal():
                 size = order_size(self.close_price, self.cash, 100)
                 self.submit_buy(self.close_price, size, Order.Limit)
-        elif order.status in (order.Canceled, order.Rejected):
+        elif order.status == order.Rejected:
             warning(self, f"{order.getstatusname()} {action} - {order.getordername()}")
+        elif order.status == Order.Canceled and order.exectype == Order.StopLimit:  # Stop loss
+            info(self, f"Cancelled {action} - {order.getordername()}")
+            self._stop_loss_order = None
