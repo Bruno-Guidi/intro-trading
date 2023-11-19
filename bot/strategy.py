@@ -22,7 +22,7 @@ class EMACrossWithKD(Strategy):
         self._fast_ema = ExponentialMovingAverage(self.datas[0], period=fast_period)
         self._slow_ema = ExponentialMovingAverage(self.datas[0], period=slow_period)
 
-        self._lower_band, self._upper_band = 30, 70
+        self._lower_band, self._upper_band = 40, 70
         self._k = Stochastic(self.datas[0], upperband=self._upper_band, lowerband=self._lower_band)
         self._d = self._k.lines[1]
 
