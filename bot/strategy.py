@@ -1,4 +1,5 @@
 import datetime
+import math
 
 from backtrader import Strategy, Order
 from backtrader.indicators import ExponentialMovingAverage, Stochastic
@@ -8,7 +9,7 @@ from bot.util import debug, info, warning, order_size
 
 class EMACrossWithKD(Strategy):
 
-    def __init__(self, fast_period: int, slow_period: int, stop_loss: float, hold_days: int):
+    def __init__(self, fast_period: int, slow_period: int, stop_loss: float, take_profit: float, hold_days: int):
         self._trend = ExponentialMovingAverage(self.datas[0], period=100)
 
         self._hold_days = datetime.timedelta(days=hold_days)  # Minimum days to hold a position.
@@ -18,6 +19,8 @@ class EMACrossWithKD(Strategy):
         self._stop_loss = stop_loss
         self._stop_loss_order = None
         self._should_adjust_sl, self._adjusted_price = False, 0
+
+        self._take_profit = take_profit
 
         self._fast_ema = ExponentialMovingAverage(self.datas[0], period=fast_period)
         self._slow_ema = ExponentialMovingAverage(self.datas[0], period=slow_period)
@@ -166,7 +169,7 @@ class EMACrossWithKD(Strategy):
                 info(self, f"Stop loss adjusted, from={self._stop_loss_order.price:.2f}, to={self._adjusted_price:.2f}")
 
                 # Take profit.
-                size = self._stop_loss_order.size // 2
+                size = math.floor(self._stop_loss_order.size * self._take_profit)
                 self.submit_sell(self.close_price, size, Order.Market)
 
                 # Adjusted stop loss.

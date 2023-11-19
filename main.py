@@ -24,6 +24,7 @@ def main():
     parser.add_argument("from_date", type=str, help="First day used from data_path. Must be in YYYYMMDD format")
     parser.add_argument("to_date", type=str, help="Last day used from data_path. Must be in YYYYMMDD format")
     parser.add_argument("initial_cash", type=float, help="Initial cash available to the bot")
+    parser.add_argument("take_profit", type=float, help="% of positions to sell after price objective is reached")
     parser.add_argument("commission", type=float, help="Commission taken by the broker")
     parser.add_argument("log_level", type=str, help="Log level to be used by the bot")
     parser.add_argument("--plot", type=bool, default=False, help="If True, call cerebro.plot()")
@@ -44,6 +45,7 @@ def main():
         fast_period=10,
         slow_period=20,
         stop_loss=0.06,
+        take_profit=args.take_profit,
         hold_days=2
     )
 
