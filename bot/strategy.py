@@ -17,13 +17,12 @@ class EMACrossWithKD(Strategy):
 
         self._stop_loss = stop_loss
         self._stop_loss_order = None
-        self._current_sl = 0
 
         self._fast_ema = ExponentialMovingAverage(self.datas[0], period=fast_period)
         self._slow_ema = ExponentialMovingAverage(self.datas[0], period=slow_period)
 
-        self._lower_band = 30
-        self._k = Stochastic(self.datas[0], upperband=70, lowerband=self._lower_band)
+        self._lower_band, self._upper_band = 30, 70
+        self._k = Stochastic(self.datas[0], upperband=self._upper_band, lowerband=self._lower_band)
         self._d = self._k.lines[1]
 
     @property
@@ -76,7 +75,7 @@ class EMACrossWithKD(Strategy):
 
         debug(self, f"{in_downtrend=}, {k_under_d_minus1=}, {k_under_d_minus0=:}, {oversold=}")
 
-        return not in_downtrend and oversold and not k_under_d_minus1 and not k_under_d_minus0
+        return not in_downtrend and oversold and not k_under_d_minus1 and k_under_d_minus0
 
     def _sell_signal(self):
         if self._qty == 0:
@@ -90,6 +89,18 @@ class EMACrossWithKD(Strategy):
 
         return min_hold_elapsed and fast_over_slow_minus1 and not fast_over_slow_minus0
 
+    def _adjust_stop_loss(self):
+        if self._stop_loss_order is None:
+            return False
+
+        overbought = self._k > self._upper_band
+        k_under_d_minus1 = self._k[-1] <= self._d[-1]
+        k_under_d_minus0 = self._k[0] <= self._d[0]
+
+        debug(self, f"{k_under_d_minus1=}, {k_under_d_minus0=}, {overbought=}")
+
+        return overbought and not k_under_d_minus1 and k_under_d_minus0
+
     def next(self):
         if self._buy_signal():
             info(self, "Triggered buy signal")
@@ -98,6 +109,8 @@ class EMACrossWithKD(Strategy):
         if self._sell_signal():
             info(self, "Triggered sell signal")
             self.submit_sell(self.close_price, self._qty, Order.Market)
+        if self._adjust_stop_loss():
+            pass
 
     def notify_order(self, order):
         action = "BUY" if order.isbuy() else "SELL"
