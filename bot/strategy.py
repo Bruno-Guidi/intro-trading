@@ -107,19 +107,21 @@ class EMACrossWithKD(Strategy):
             info(self, "Triggered buy signal")
             size = order_size(self.close_price, self.cash, 97)
             self.submit_buy(self.close_price, size, Order.Limit)
+            return
         if self._sell_signal():
             info(self, "Triggered sell signal")
             self.submit_sell(self.close_price, self._qty, Order.Market)
 
             # If we wait for the sell to be accepted for cancelling the SL, we
             # run into problems if both orders are executed the same day.
-            info(self, "Stop loss cancelled")
             self.cancel(self._stop_loss_order)
             self._should_adjust_sl = False
+            return
         if self._stop_loss_change():
             self.cancel(self._stop_loss_order)
             self._adjusted_price = self.close_price - self.close_price*self._stop_loss
             self._should_adjust_sl = True
+            return 
 
     def notify_order(self, order):
         action = "BUY" if order.isbuy() else "SELL"
@@ -152,7 +154,9 @@ class EMACrossWithKD(Strategy):
                 info(self, f"Stop loss active, {price=:.2f}")
                 self.submit_sell(price, order.executed.size, Order.StopLimit)
             else:
+                prev = self._qty
                 self._qty += order.executed.size  # Size of SELL is negative.
+                info(self, f"#####{prev=} to {self._qty=}")
         elif order.status == order.Margin:
             # The price went up, and we don't have enough money to make the planned buy.
             warning(self, f"Margin {action}: {self.close_price[0]=}")
