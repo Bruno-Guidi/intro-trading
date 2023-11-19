@@ -9,7 +9,21 @@ from bot.util import debug, info, warning, order_size
 class EMACrossWithKD(Strategy):
 
     def __init__(self, fast_period: int, slow_period: int, stop_loss: float, hold_days: int):
-        pass
+        self._trend = ExponentialMovingAverage(self.datas[0], period=100)
+
+        self._hold_days = datetime.timedelta(days=hold_days)  # Minimum days to hold a position.
+        self._qty = 0
+        self._buy_date = None
+
+        self._stop_loss = stop_loss
+        self._stop_loss_order = None
+
+        self._fast_ema = ExponentialMovingAverage(self.datas[0], period=fast_period)
+        self._slow_ema = ExponentialMovingAverage(self.datas[0], period=slow_period)
+
+        self._lower_band = 30
+        self._k = Stochastic(self.datas[0], upperband=70, lowerband=self._lower_band)
+        self._d = self._k.lines[1]
 
     @property
     def today(self):
@@ -50,16 +64,58 @@ class EMACrossWithKD(Strategy):
         return order
 
     def _buy_signal(self):
-        pass
+        if self._qty > 0:
+            return False
+
+        in_downtrend = self._trend[0] < self._trend[-1]
+
+        oversold = self._k <= self._lower_band
+        k_under_d_minus1 = self._k[-1] <= self._d[-1]
+        k_under_d_minus0 = self._k[0] <= self._d[0]
+
+        debug(self, f"{in_downtrend=}, {k_under_d_minus1=}, {k_under_d_minus0=:}, {oversold=}")
+
+        return not in_downtrend and oversold and not k_under_d_minus1 and not k_under_d_minus0
 
     def _sell_signal(self):
         pass
 
-    def _adjust_stop_loss(self):
-        pass
-
     def next(self):
-        pass
+        if self._buy_signal():
+            info(self, "Triggered buy signal")
+            size = order_size(self.close_price, self.cash, 97)
+            self.submit_buy(self.close_price, size, Order.Limit)
+        if self._sell_signal():
+            pass
 
     def notify_order(self, order):
-        pass
+        action = "BUY" if order.isbuy() else "SELL"
+
+        if order.status == order.Submitted:
+            debug(self, f"Submitted {action} - {order.getordername()}")
+            return None
+
+        if order.status == order.Accepted:
+            debug(self, f"Accepted {action} - {order.getordername()}")
+            return None
+
+        if order.status == order.Completed:
+            msg = "Executed {} - {}, size={}, price={:.2f}, amount={:.2f}, comm={:.2f}, cash={:.2f}".format(
+                action, order.getordername(), order.executed.size, order.executed.price,
+                order.executed.value, order.executed.comm, self.cash
+            )
+            info(self, msg)
+
+            if order.isbuy():
+                self._qty = order.executed.size
+                self._buy_date = self.today
+            else:
+                self._qty = 0
+        if order.status == order.Margin:
+            # The price went up, and we don't have enough money to make the planned buy.
+            warning(self, f"Margin {action}: {self.close_price[0]=}")
+            if self._buy_signal():
+                size = order_size(self.close_price, self.cash, 100)
+                self.submit_buy(self.close_price, size, Order.Limit)
+        elif order.status in (order.Canceled, order.Rejected):
+            warning(self, f"{order.getstatusname()} {action} - {order.getordername()}")
