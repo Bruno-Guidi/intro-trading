@@ -75,7 +75,7 @@ class EMACrossWithKD(Strategy):
 
         debug(self, f"{in_downtrend=}, {k_under_d_minus1=}, {k_under_d_minus0=:}, {oversold=}")
 
-        return not in_downtrend and oversold and not k_under_d_minus1 and k_under_d_minus0
+        return not in_downtrend and oversold and k_under_d_minus1 and not k_under_d_minus0
 
     def _sell_signal(self):
         if self._qty == 0:
@@ -109,6 +109,12 @@ class EMACrossWithKD(Strategy):
         if self._sell_signal():
             info(self, "Triggered sell signal")
             self.submit_sell(self.close_price, self._qty, Order.Market)
+
+            # If we wait for the sell to be accepted for cancelling the SL, we
+            # run into problems if both orders are executed the same day.
+            info(self, "Stop lost cancelled")
+            self.cancel(self._stop_loss_order)
+            self._stop_loss_order = None
         if self._adjust_stop_loss():
             pass
 
@@ -124,10 +130,6 @@ class EMACrossWithKD(Strategy):
             if order.issell():
                 if order.exectype == Order.StopLimit:
                     self._stop_loss_order = order
-                else:
-                    info(self, "Stop lost cancelled")
-                    self.cancel(self._stop_loss_order)
-                    self._stop_loss_order = None
             return None
 
         if order.status == order.Partial:
