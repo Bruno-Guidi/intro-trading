@@ -108,6 +108,13 @@ class EMACrossWithKD(Strategy):
 
         if order.status == order.Accepted:
             debug(self, f"Accepted {action} - {order.getordername()}")
+            if order.issell():
+                if order.exectype == Order.StopLimit:
+                    self._stop_loss_order = order
+                else:
+                    info(self, "Stop lost cancelled")
+                    self.cancel(self._stop_loss_order)
+                    self._stop_loss_order = None
             return None
 
         if order.status == order.Partial:
@@ -124,8 +131,13 @@ class EMACrossWithKD(Strategy):
             if order.isbuy():
                 self._qty = order.executed.size
                 self._buy_date = self.today
-            else:
-                self._qty = 0
+
+                # Put a stop loss order.
+                price = order.executed.price - order.executed.price*self._stop_loss
+                info(self, f"Stop loss active, {price=:.2f}")
+                self.submit_sell(price, order.executed.size, Order.StopLimit)
+            else:  # Other sell
+                self._qty += order.executed.size  # Size of SELL is negative.
         if order.status == order.Margin:
             # The price went up, and we don't have enough money to make the planned buy.
             warning(self, f"Margin {action}: {self.close_price[0]=}")
