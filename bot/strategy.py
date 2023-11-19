@@ -17,6 +17,7 @@ class EMACrossWithKD(Strategy):
 
         self._stop_loss = stop_loss
         self._stop_loss_order = None
+        self._current_sl = 0
 
         self._fast_ema = ExponentialMovingAverage(self.datas[0], period=fast_period)
         self._slow_ema = ExponentialMovingAverage(self.datas[0], period=slow_period)
@@ -78,7 +79,16 @@ class EMACrossWithKD(Strategy):
         return not in_downtrend and oversold and not k_under_d_minus1 and not k_under_d_minus0
 
     def _sell_signal(self):
-        pass
+        if self._qty == 0:
+            return False
+
+        min_hold_elapsed = self.today - self._buy_date >= self._hold_days
+        fast_over_slow_minus1 = self._fast_ema[-1] > self._slow_ema[-1]
+        fast_over_slow_minus0 = self._fast_ema[0] > self._slow_ema[0]
+
+        debug(self, f"{min_hold_elapsed=}, {fast_over_slow_minus1=}, {fast_over_slow_minus0=}")
+
+        return min_hold_elapsed and fast_over_slow_minus1 and not fast_over_slow_minus0
 
     def next(self):
         if self._buy_signal():
@@ -86,7 +96,8 @@ class EMACrossWithKD(Strategy):
             size = order_size(self.close_price, self.cash, 97)
             self.submit_buy(self.close_price, size, Order.Limit)
         if self._sell_signal():
-            pass
+            info(self, "Triggered sell signal")
+            self.submit_sell(self.close_price, self._qty, Order.Market)
 
     def notify_order(self, order):
         action = "BUY" if order.isbuy() else "SELL"
@@ -97,6 +108,10 @@ class EMACrossWithKD(Strategy):
 
         if order.status == order.Accepted:
             debug(self, f"Accepted {action} - {order.getordername()}")
+            return None
+
+        if order.status == order.Partial:
+            debug(self, f"Partial {action} - {order.getordername()}")
             return None
 
         if order.status == order.Completed:
