@@ -164,7 +164,13 @@ class EMACrossWithKD(Strategy):
         elif order.status == Order.Canceled and order.exectype == Order.StopLimit:  # Stop loss
             if self._should_adjust_sl:
                 info(self, f"Stop loss adjusted, from={self._stop_loss_order.price:.2f}, to={self._adjusted_price:.2f}")
-                self.submit_sell(self._adjusted_price, self._stop_loss_order.size, Order.StopLimit)
+
+                # Take profit.
+                size = self._stop_loss_order.size // 2
+                self.submit_sell(self.close_price, size, Order.Market)
+
+                # Adjusted stop loss.
+                self.submit_sell(self._adjusted_price, self._stop_loss_order.size - size, Order.StopLimit)
                 self._should_adjust_sl = False
             else:
                 info(self, f"Stop loss cancelled")
