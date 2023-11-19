@@ -111,7 +111,7 @@ class EMACrossWithKD(Strategy):
             return None
 
         if order.status == order.Partial:
-            debug(self, f"Partial {action} - {order.getordername()}")
+            info(self, f"Partial {action} - {order.getordername()}")
             return None
 
         if order.status == order.Completed:
