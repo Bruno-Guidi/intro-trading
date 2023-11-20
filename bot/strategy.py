@@ -157,13 +157,14 @@ class EMACrossWithKD(Strategy):
         if self._stop_loss_order is None:
             return False
 
-        overbought = self._k > self._upper_band
+        overbought_minus1 = self._rsi[-1] > self._upper_band
+        overbought_minus0 = self._rsi[0] > self._upper_band
         k_under_d_minus1 = self._k[-1] <= self._d[-1]
         k_under_d_minus0 = self._k[0] <= self._d[0]
 
-        debug(self, f"{k_under_d_minus1=}, {k_under_d_minus0=}, {overbought=}")
+        debug(self, f"{k_under_d_minus1=}, {k_under_d_minus0=}, {overbought_minus1=}")
 
-        return overbought and not k_under_d_minus1 and k_under_d_minus0
+        return overbought_minus1 and not overbought_minus0
 
     def next(self):
         self._avg_volume.update(self.volume[0])
