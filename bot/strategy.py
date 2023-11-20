@@ -1,3 +1,4 @@
+import collections
 import datetime
 import math
 
@@ -7,9 +8,36 @@ from backtrader.indicators import ExponentialMovingAverage, Stochastic
 from bot.util import debug, info, warning, order_size
 
 
+class AvgVolume:
+    """Average volume of the past N days."""
+    def __init__(self, days):
+        # Recent values are at the right end of the deque.
+        self._deque = collections.deque(maxlen=days)
+        self._max_size = days
+        self._sum = 0
+
+    def update(self, volume: float):
+        if len(self._deque) == 5:
+            self._sum -= self._deque.popleft()
+        self._deque.append(volume)
+        self._sum += volume
+
+    @property
+    def avg(self):
+        return self._sum/len(self._deque)
+
+
 class EMACrossWithKD(Strategy):
 
-    def __init__(self, fast_period: int, slow_period: int, stop_loss: float, take_profit: float, hold_days: int):
+    def __init__(
+            self,
+            fast_period: int,
+            slow_period: int,
+            stop_loss: float,
+            take_profit: float,
+            hold_days: int,
+            vol_to_avg_vol_ratio: float,
+    ):
         self._trend = ExponentialMovingAverage(self.datas[0], period=100)
 
         self._hold_days = datetime.timedelta(days=hold_days)  # Minimum days to hold a position.
@@ -29,6 +57,9 @@ class EMACrossWithKD(Strategy):
         self._k = Stochastic(self.datas[0], upperband=self._upper_band, lowerband=self._lower_band)
         self._d = self._k.lines[1]
 
+        self._avg_volume = AvgVolume(days=5)
+        self._vol_to_avg_vol_ratio = vol_to_avg_vol_ratio
+
     @property
     def today(self):
         return self.datas[0].datetime.date(0)
@@ -36,6 +67,10 @@ class EMACrossWithKD(Strategy):
     @property
     def close_price(self):
         return self.datas[0].close
+
+    @property
+    def volume(self):
+        return self.datas[0].volume
 
     @property
     def cash(self):
@@ -67,7 +102,7 @@ class EMACrossWithKD(Strategy):
 
         return order
 
-    def _buy_signal(self):
+    def _buy_signal_kd(self):
         if self._qty > 0:
             return False
 
@@ -79,7 +114,30 @@ class EMACrossWithKD(Strategy):
 
         debug(self, f"{in_downtrend=}, {k_under_d_minus1=}, {k_under_d_minus0=:}, {oversold=}")
 
-        return not in_downtrend and oversold and k_under_d_minus1 and not k_under_d_minus0
+        signal = not in_downtrend and oversold and k_under_d_minus1 and not k_under_d_minus0
+        if signal:
+            info(self, f"buy signal, {in_downtrend=}, {k_under_d_minus1=}, {k_under_d_minus0=:}, {oversold=}")
+        return signal
+
+    def _buy_signal_ema100(self):
+        """Close price should cross over EMA100 with significant volume."""
+        if self._qty > 0:
+            return False
+
+        in_downtrend = self._trend[0] < self._trend[-1]
+        if in_downtrend:
+            return False
+
+        ma100_crossed = self.close_price[-1] < self._trend[0] and self.close_price[0] > self._trend[0]
+        vol_to_avg_vol = self.volume[0]/self._avg_volume.avg
+        debug(self, f"{ma100_crossed=}, vol={self.volume[0]:.0f}, avg_vol={self._avg_volume.avg:.0f}, {vol_to_avg_vol=:.2f}")
+
+        signal = ma100_crossed and vol_to_avg_vol >= self._vol_to_avg_vol_ratio
+
+        if signal:
+            info(self, f"buy signal, {ma100_crossed=}, vol={self.volume[0]:.0f}, avg_vol={self._avg_volume.avg:.0f}, {vol_to_avg_vol=:.2f}")
+
+        return signal
 
     def _sell_signal(self):
         if self._qty == 0:
@@ -106,8 +164,9 @@ class EMACrossWithKD(Strategy):
         return overbought and not k_under_d_minus1 and k_under_d_minus0
 
     def next(self):
-        if self._buy_signal():
-            info(self, "Triggered buy signal")
+        self._avg_volume.update(self.volume[0])
+
+        if self._buy_signal_kd() or self._buy_signal_ema100():
             size = order_size(self.close_price, self.cash, 97)
             self.submit_buy(self.close_price, size, Order.Limit)
             return
@@ -161,7 +220,7 @@ class EMACrossWithKD(Strategy):
         elif order.status == order.Margin:
             # The price went up, and we don't have enough money to make the planned buy.
             warning(self, f"Margin {action}: {self.close_price[0]=}")
-            if self._buy_signal():
+            if self._buy_signal_kd():
                 size = order_size(self.close_price, self.cash, 100)
                 self.submit_buy(self.close_price, size, Order.Limit)
         elif order.status == Order.Canceled and order.exectype == Order.StopLimit:  # Stop loss
