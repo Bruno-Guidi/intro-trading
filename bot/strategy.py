@@ -3,7 +3,7 @@ import datetime
 import math
 
 from backtrader import Strategy, Order
-from backtrader.indicators import ExponentialMovingAverage, Stochastic
+from backtrader.indicators import ExponentialMovingAverage, Stochastic, RelativeStrengthIndex
 
 from bot.util import debug, info, warning, order_size
 
@@ -59,6 +59,8 @@ class EMACrossWithKD(Strategy):
 
         self._avg_volume = AvgVolume(days=5)
         self._vol_to_avg_vol_ratio = vol_to_avg_vol_ratio
+
+        self._rsi = RelativeStrengthIndex(self.datas[0])
 
     @property
     def today(self):
