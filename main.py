@@ -20,23 +20,19 @@ def _config_logger(level: str):
 def main():
     # Script set up.
     parser = argparse.ArgumentParser(description="Algorithm trading bot")
-    parser.add_argument("data_path", type=str, help="Filepath for .csv file used as input by the bot")
-    parser.add_argument("from_date", type=str, help="First day used from data_path. Must be in YYYYMMDD format")
-    parser.add_argument("to_date", type=str, help="Last day used from data_path. Must be in YYYYMMDD format")
-    parser.add_argument("initial_cash", type=float, help="Initial cash available to the bot")
-    parser.add_argument("take_profit", type=float, help="% of positions to sell after price objective is reached")
-    parser.add_argument("vol_to_avg_vol_ratio", type=float, help="Ratio between volume and its 5D avg to signal buy")
-    parser.add_argument("commission", type=float, help="Commission taken by the broker")
-    parser.add_argument("log_level", type=str, help="Log level to be used by the bot")
+    parser.add_argument("--data-path", type=str, help="Filepath for .csv file used as input by the bot")
+    parser.add_argument("--from-date", type=str, help="First day used from data_path. Must be in YYYYMMDD format")
+    parser.add_argument("--to-date", type=str, help="Last day used from data_path. Must be in YYYYMMDD format")
+    parser.add_argument("--cash", type=float, help="Initial cash available to the bot")
+    parser.add_argument("--take-profit", type=float, help="% of positions to sell after price objective is reached")
+    parser.add_argument("--vol-to-avg-vol-ratio", type=float, help="Ratio between volume and its 5D avg to signal buy")
+    parser.add_argument("--commission", type=float, help="Commission taken by the broker")
+    parser.add_argument("--log-level", type=str, help="Log level to be used by the bot", default="INFO")
     parser.add_argument("--plot", type=bool, default=False, help="If True, call cerebro.plot()")
     args = parser.parse_args()
 
     _config_logger(args.log_level)
     _logger = logging.getLogger()
-
-    _logger.info(
-        "Parsed arguments: data_path=%s, from_date=%s, to_date=%s, initial_cash=%.4f, commission=%.4f, log_level=%s",
-        args.data_path, args.from_date, args.to_date, args.initial_cash, args.commission, args.log_level)
 
     # Backtrader set up.
     cerebro = bt.Cerebro()
@@ -61,17 +57,26 @@ def main():
     )
     cerebro.adddata(data)
 
-    cerebro.broker.setcash(float(args.initial_cash))
+    cerebro.broker.setcash(float(args.cash))
     cerebro.broker.setcommission(float(args.commission))
 
-    # Print out the starting conditions
-    _logger.info('Starting Portfolio Value: %.2f' % cerebro.broker.getvalue())
+    portfolio_start = cerebro.broker.getvalue()
 
-    # Run over everything
     cerebro.run()
 
-    # Print out the final result
-    _logger.info('Final Portfolio Value: %.2f' % cerebro.broker.getvalue())
+    # Run details.
+    _logger.info(f"{args.data_path=}")
+    _logger.info(f"{args.from_date=}")
+    _logger.info(f"{args.to_date=}")
+    _logger.info(f"{args.cash=}")
+    _logger.info(f"{args.take_profit=}")
+    _logger.info(f"{args.vol_to_avg_vol_ratio=}")
+    _logger.info(f"{args.commission=}")
+    _logger.info(f"{args.log_level=}")
+    _logger.info(f"{args.plot=}")
+    _logger.info(f"{portfolio_start=}")
+    portfolio_end = cerebro.broker.getvalue()
+    _logger.info(f"{portfolio_end=:.2f}")
 
     if args.plot:
         cerebro.plot()
