@@ -28,6 +28,10 @@ class AvgVolume:
 
 
 class EMACrossWithKD(Strategy):
+    """
+    parser.add_argument("take_profit", type=float, help="% of positions to sell after price objective is reached")
+    parser.add_argument("vol_to_avg_vol_ratio", type=float, help="Ratio between volume and its 5D avg to signal buy")
+    """
 
     def __init__(
             self,
@@ -38,6 +42,16 @@ class EMACrossWithKD(Strategy):
             hold_days: int,
             vol_to_avg_vol_ratio: float,
     ):
+        """Trading strategy based on EMA Cross, K%D and RSI, with stop loss and take profit.
+
+        Args:
+            fast_period: Number of days for the fast EMA.
+            slow_period: Number of days for the slow EMA.
+            stop_loss: Percentage to use for the calculation of a stop loss order.
+            take_profit: Percentage of the position to sell when a price objective is reached.
+            hold_days: Minimum number of days to hold a position.
+            vol_to_avg_vol_ratio: Ratio used to generate a buy signal based on volume.
+        """
         self._trend = ExponentialMovingAverage(self.datas[0], period=150)
 
         self._hold_days = datetime.timedelta(days=hold_days)  # Minimum days to hold a position.
@@ -79,6 +93,7 @@ class EMACrossWithKD(Strategy):
         return self.broker.get_cash()
 
     def submit_buy(self, price, size, exec_type):
+        """Utility method used to sell."""
         if size == 0:
             return
         order = self.buy(size=size, price=price, exectype=exec_type)
@@ -92,6 +107,7 @@ class EMACrossWithKD(Strategy):
         return order
 
     def submit_sell(self, price, size, exec_type):
+        """Utility method used to buy."""
         if size == 0:
             return
         order = self.sell(size=size, price=price, exectype=exec_type, plimit=price)
@@ -105,6 +121,8 @@ class EMACrossWithKD(Strategy):
         return order
 
     def _buy_signal_kd(self):
+        """The security should be in an uptrend, and K should cross D in oversold zone.
+        """
         if self._qty > 0:
             return False
 
@@ -122,7 +140,8 @@ class EMACrossWithKD(Strategy):
         return signal
 
     def _buy_signal_ema100(self):
-        """Close price should cross over EMA100 with significant volume."""
+        """The security should be in an uptrend, and the close price should cross the EMA150 with significant volume.
+        """
         if self._qty > 0:
             return False
 
@@ -142,6 +161,7 @@ class EMACrossWithKD(Strategy):
         return signal
 
     def _sell_signal(self):
+        """The fast EMA should cross under the slow EMA."""
         if self._qty == 0:
             return False
 
@@ -154,15 +174,14 @@ class EMACrossWithKD(Strategy):
         return min_hold_elapsed and fast_over_slow_minus1 and not fast_over_slow_minus0
 
     def _stop_loss_change(self):
+        """For the stop loss to be adjusted, RSI should cross under its upper band line."""
         if self._stop_loss_order is None:
             return False
 
         overbought_minus1 = self._rsi[-1] > self._upper_band
         overbought_minus0 = self._rsi[0] > self._upper_band
-        k_under_d_minus1 = self._k[-1] <= self._d[-1]
-        k_under_d_minus0 = self._k[0] <= self._d[0]
 
-        debug(self, f"{k_under_d_minus1=}, {k_under_d_minus0=}, {overbought_minus1=}")
+        debug(self, f"{overbought_minus1=}, {overbought_minus0=}")
 
         return overbought_minus1 and not overbought_minus0
 
@@ -170,6 +189,7 @@ class EMACrossWithKD(Strategy):
         self._avg_volume.update(self.volume[0])
 
         if self._buy_signal_kd() or self._buy_signal_ema100():
+            # Don't use 100% of the cash to minimize chances of receiving a Margin order.
             size = order_size(self.close_price, self.cash, 97)
             self.submit_buy(self.close_price, size, Order.Limit)
             return
@@ -194,16 +214,16 @@ class EMACrossWithKD(Strategy):
         if order.status == order.Submitted:
             debug(self, f"Submitted {action} - {order.getordername()}")
             return None
-        elif order.status == order.Accepted:
+        if order.status == order.Accepted:
             info(self, f"Accepted {action} - {order.getordername()}")
             if order.issell():
                 if order.exectype == Order.StopLimit:
                     self._stop_loss_order = order
             return None
-        elif order.status == order.Partial:
+        if order.status == order.Partial:
             debug(self, f"Partial {action} - {order.getordername()}")
             return None
-        elif order.status == order.Completed:
+        if order.status == order.Completed:
             msg = "Executed {} - {}, size={}, price={:.2f}, amount={:.2f}, comm={:.2f}, cash={:.2f}".format(
                 action, order.getordername(), order.executed.size, order.executed.price,
                 order.executed.value, order.executed.comm, self.cash
@@ -220,13 +240,15 @@ class EMACrossWithKD(Strategy):
                 self.submit_sell(price, order.executed.size, Order.StopLimit)
             else:
                 self._qty += order.executed.size  # Size of SELL is negative.
-        elif order.status == order.Margin:
+            return None
+        if order.status == order.Margin:
             # The price went up, and we don't have enough money to make the planned buy.
             warning(self, f"Margin {action}: {self.close_price[0]=}")
             if self._buy_signal_kd():
                 size = order_size(self.close_price, self.cash, 100)
                 self.submit_buy(self.close_price, size, Order.Limit)
-        elif order.status == Order.Canceled and order.exectype == Order.StopLimit:  # Stop loss
+            return None
+        if order.status == Order.Canceled and order.exectype == Order.StopLimit:  # Stop loss
             if self._should_adjust_sl:
                 info(self, f"Stop loss adjusted, from={self._stop_loss_order.price:.2f}, to={self._adjusted_price:.2f}")
 
@@ -240,5 +262,5 @@ class EMACrossWithKD(Strategy):
             else:
                 info(self, f"Stop loss cancelled")
                 self._stop_loss_order = None
-        else:
-            warning(self, f"{order.getstatusname()} {action} - {order.getordername()}")
+            return None
+        warning(self, f"{order.getstatusname()} {action} - {order.getordername()}")
