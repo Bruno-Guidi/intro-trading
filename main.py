@@ -24,7 +24,7 @@ def main():
     parser.add_argument("--from-date", type=str, help="First day used from data_path. Must be in YYYYMMDD format")
     parser.add_argument("--to-date", type=str, help="Last day used from data_path. Must be in YYYYMMDD format")
     parser.add_argument("--cash", type=float, help="Initial cash available to the bot")
-    parser.add_argument("--take-profit", type=float, help="% of positions to sell after price objective is reached")
+    parser.add_argument("--take-profit", type=float, help="%% of positions to sell after price objective is reached")
     parser.add_argument("--vol-to-avg-vol-ratio", type=float, help="Ratio between volume and its 5D avg to signal buy")
     parser.add_argument("--commission", type=float, help="Commission taken by the broker")
     parser.add_argument("--log-level", type=str, help="Log level to be used by the bot", default="INFO")
