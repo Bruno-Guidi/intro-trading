@@ -38,7 +38,7 @@ class EMACrossWithKD(Strategy):
             hold_days: int,
             vol_to_avg_vol_ratio: float,
     ):
-        self._trend = ExponentialMovingAverage(self.datas[0], period=100)
+        self._trend = ExponentialMovingAverage(self.datas[0], period=150)
 
         self._hold_days = datetime.timedelta(days=hold_days)  # Minimum days to hold a position.
         self._qty = 0
